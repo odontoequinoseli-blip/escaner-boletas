@@ -1,8 +1,7 @@
+cat > /mnt/user-data/outputs/escaner-boletas.jsx << 'ENDOFFILE'
 import { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
 const STORAGE_KEY = "boletas_data";
 
 function fileToBase64(file) {
@@ -21,29 +20,7 @@ async function extractBoletaData(file) {
   const response = await fetch("/api/scan", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image: base64, mediaType,
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-            {
-              type: "text",
-              text: `Extrae los siguientes datos de esta boleta o documento de compra. Responde SOLO con un objeto JSON válido, sin texto adicional ni backticks:
-{
-  "nro_boleta": "número de boleta o folio (solo el número, sin texto)",
-  "fecha": "fecha en formato DD/MM/AAAA",
-  "monto_total": número entero sin puntos ni símbolos (solo el número),
-  "nombre_empresa": "nombre del emisor o empresa que emitió la boleta"
-}
-Si algún campo no está visible o no puedes determinarlo, usa null.`,
-            },
-          ],
-        },
-      ],
-    }),
+    body: JSON.stringify({ image: base64, mediaType }),
   });
 
   if (!response.ok) throw new Error("Error al consultar la API");
@@ -55,7 +32,7 @@ Si algún campo no está visible o no puedes determinarlo, usa null.`,
 
 function loadFromStorage() {
   try {
-    const raw = window.storage ? null : localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
   return [];
@@ -63,7 +40,6 @@ function loadFromStorage() {
 
 function saveToStorage(boletas) {
   try {
-    // Solo guardar datos, sin las previews (URLs de objeto no persisten)
     const toSave = boletas.map(({ _preview, ...rest }) => rest);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   } catch {}
@@ -78,10 +54,7 @@ export default function EscanerBoletas() {
   const [toast, setToast] = useState(null);
   const fileRef = useRef();
 
-  // Guardar en localStorage cada vez que cambien las boletas
-  useEffect(() => {
-    saveToStorage(boletas);
-  }, [boletas]);
+  useEffect(() => { saveToStorage(boletas); }, [boletas]);
 
   function showToast(msg, color = "#217346") {
     setToast({ msg, color });
@@ -92,7 +65,6 @@ export default function EscanerBoletas() {
     const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (!imgs.length) return;
     setProcesando(true);
-
     const nuevas = [];
     for (const file of imgs) {
       const previewUrl = URL.createObjectURL(file);
@@ -100,11 +72,7 @@ export default function EscanerBoletas() {
         const datos = await extractBoletaData(file);
         nuevas.push({ ...datos, _preview: previewUrl, _nombre: file.name, _status: "ok", _fecha_registro: new Date().toLocaleDateString("es-CL") });
       } catch {
-        nuevas.push({
-          nro_boleta: null, fecha: null, monto_total: null, nombre_empresa: null,
-          _preview: previewUrl, _nombre: file.name, _status: "error",
-          _fecha_registro: new Date().toLocaleDateString("es-CL"),
-        });
+        nuevas.push({ nro_boleta: null, fecha: null, monto_total: null, nombre_empresa: null, _preview: previewUrl, _nombre: file.name, _status: "error", _fecha_registro: new Date().toLocaleDateString("es-CL") });
       }
     }
     setBoletas((prev) => [...prev, ...nuevas]);
@@ -114,68 +82,35 @@ export default function EscanerBoletas() {
 
   function onFileChange(e) { procesarArchivos(e.target.files); e.target.value = ""; }
   function onDrop(e) { e.preventDefault(); setDragOver(false); procesarArchivos(e.dataTransfer.files); }
-
-  function eliminar(idx) {
-    setBoletas((prev) => prev.filter((_, i) => i !== idx));
-    showToast("🗑️ Boleta eliminada", "#e05252");
-  }
-
+  function eliminar(idx) { setBoletas((prev) => prev.filter((_, i) => i !== idx)); showToast("🗑️ Boleta eliminada", "#e05252"); }
   function startEdit(idx) { setEditIdx(idx); setEditData({ ...boletas[idx] }); }
-  function saveEdit() {
-    setBoletas((prev) => prev.map((b, i) => (i === editIdx ? { ...editData } : b)));
-    setEditIdx(null);
-    showToast("✏️ Datos actualizados");
-  }
-
-  function limpiarTodo() {
-    if (window.confirm("¿Eliminar todas las boletas guardadas?")) {
-      setBoletas([]);
-      showToast("🗑️ Todo limpiado", "#e05252");
-    }
-  }
+  function saveEdit() { setBoletas((prev) => prev.map((b, i) => (i === editIdx ? { ...editData } : b))); setEditIdx(null); showToast("✏️ Datos actualizados"); }
+  function limpiarTodo() { if (window.confirm("¿Eliminar todas las boletas guardadas?")) { setBoletas([]); showToast("🗑️ Todo limpiado", "#e05252"); } }
 
   function exportarExcel() {
-    const rows = boletas.map((b, i) => ({
-      "#": i + 1,
-      "Nro. Boleta": b.nro_boleta ?? "",
-      "Fecha": b.fecha ?? "",
-      "Monto Total ($)": b.monto_total ?? "",
-      "Nombre Empresa": b.nombre_empresa ?? "",
-      "Registrado": b._fecha_registro ?? "",
-    }));
+    const rows = boletas.map((b, i) => ({ "#": i + 1, "Nro. Boleta": b.nro_boleta ?? "", "Fecha": b.fecha ?? "", "Monto Total ($)": b.monto_total ?? "", "Nombre Empresa": b.nombre_empresa ?? "", "Registrado": b._fecha_registro ?? "" }));
     const ws = XLSX.utils.json_to_sheet(rows);
     ws["!cols"] = [{ wch: 4 }, { wch: 14 }, { wch: 13 }, { wch: 16 }, { wch: 28 }, { wch: 13 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Boletas");
-    const fecha = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `boletas_${fecha}.xlsx`);
+    XLSX.writeFile(wb, `boletas_${new Date().toISOString().slice(0, 10)}.xlsx`);
     showToast("📊 Excel exportado");
   }
 
   const total = boletas.reduce((s, b) => s + (Number(b.monto_total) || 0), 0);
-
-  // Agrupar por mes para el resumen
   const porMes = boletas.reduce((acc, b) => {
     if (!b.fecha) return acc;
-    const partes = b.fecha.split("/");
-    if (partes.length < 3) return acc;
-    const clave = `${partes[1]}/${partes[2]}`;
-    acc[clave] = (acc[clave] || 0) + (Number(b.monto_total) || 0);
+    const p = b.fecha.split("/");
+    if (p.length < 3) return acc;
+    const k = `${p[1]}/${p[2]}`;
+    acc[k] = (acc[k] || 0) + (Number(b.monto_total) || 0);
     return acc;
   }, {});
 
   return (
     <div style={{ minHeight: "100vh", background: "#f0f4f8", fontFamily: "Inter, Arial, sans-serif", padding: "20px 14px" }}>
-
-      {/* Toast */}
-      {toast && (
-        <div style={{ position: "fixed", top: 20, right: 20, background: toast.color, color: "#fff", padding: "10px 18px", borderRadius: 10, fontWeight: 600, fontSize: 14, zIndex: 999, boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
-          {toast.msg}
-        </div>
-      )}
-
+      {toast && <div style={{ position: "fixed", top: 20, right: 20, background: toast.color, color: "#fff", padding: "10px 18px", borderRadius: 10, fontWeight: 600, fontSize: 14, zIndex: 999, boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>{toast.msg}</div>}
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -183,7 +118,7 @@ export default function EscanerBoletas() {
               <h1 style={{ margin: 0, fontSize: 21, fontWeight: 700, color: "#1a2540" }}>Escáner de Boletas</h1>
             </div>
             <p style={{ margin: "4px 0 0 36px", color: "#6b7a99", fontSize: 13 }}>
-              {boletas.length > 0 ? `${boletas.length} boleta${boletas.length > 1 ? "s" : ""} guardada${boletas.length > 1 ? "s" : ""} · Total acumulado: $${total.toLocaleString("es-CL")}` : "Sube fotos de boletas para comenzar"}
+              {boletas.length > 0 ? `${boletas.length} boleta${boletas.length > 1 ? "s" : ""} guardada${boletas.length > 1 ? "s" : ""} · Total: $${total.toLocaleString("es-CL")}` : "Sube fotos de boletas para comenzar"}
             </p>
           </div>
           {boletas.length > 0 && (
@@ -194,98 +129,59 @@ export default function EscanerBoletas() {
           )}
         </div>
 
-        {/* Resumen por mes */}
         {Object.keys(porMes).length > 1 && (
           <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
             {Object.entries(porMes).sort().map(([mes, monto]) => (
               <div key={mes} style={{ background: "#fff", borderRadius: 8, padding: "8px 14px", fontSize: 13, color: "#1a2540", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
-                <span style={{ color: "#6b7a99" }}>{mes} · </span>
-                <strong>${monto.toLocaleString("es-CL")}</strong>
+                <span style={{ color: "#6b7a99" }}>{mes} · </span><strong>${monto.toLocaleString("es-CL")}</strong>
               </div>
             ))}
           </div>
         )}
 
-        {/* Drop zone */}
-        <div
-          onDrop={onDrop}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onClick={() => fileRef.current.click()}
-          style={{
-            border: `2px dashed ${dragOver ? "#4f6ef7" : "#c4cfe0"}`,
-            borderRadius: 14, background: dragOver ? "#eef1ff" : "#fff",
-            padding: "28px 24px", textAlign: "center", cursor: "pointer",
-            transition: "all 0.2s", marginBottom: 16,
-          }}
-        >
+        <div onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onClick={() => fileRef.current.click()}
+          style={{ border: `2px dashed ${dragOver ? "#4f6ef7" : "#c4cfe0"}`, borderRadius: 14, background: dragOver ? "#eef1ff" : "#fff", padding: "28px 24px", textAlign: "center", cursor: "pointer", transition: "all 0.2s", marginBottom: 16 }}>
           <div style={{ fontSize: 34, marginBottom: 6 }}>📷</div>
-          <div style={{ fontWeight: 600, color: "#1a2540", fontSize: 15 }}>
-            {boletas.length > 0 ? "Agregar más boletas" : "Arrastra imágenes aquí o haz clic"}
-          </div>
-          <div style={{ color: "#6b7a99", fontSize: 12, marginTop: 3 }}>
-            JPG, PNG, WEBP · varias a la vez · se guardan automáticamente
-          </div>
+          <div style={{ fontWeight: 600, color: "#1a2540", fontSize: 15 }}>{boletas.length > 0 ? "Agregar más boletas" : "Arrastra imágenes aquí o haz clic"}</div>
+          <div style={{ color: "#6b7a99", fontSize: 12, marginTop: 3 }}>JPG, PNG, WEBP · varias a la vez · se guardan automáticamente</div>
           <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFileChange} style={{ display: "none" }} />
         </div>
 
-        {procesando && (
-          <div style={{ textAlign: "center", padding: "16px 0", color: "#4f6ef7", fontWeight: 600, fontSize: 14 }}>
-            ⏳ Analizando con IA...
-          </div>
-        )}
+        {procesando && <div style={{ textAlign: "center", padding: "16px 0", color: "#4f6ef7", fontWeight: 600, fontSize: 14 }}>⏳ Analizando con IA...</div>}
 
-        {/* Tabla */}
         {boletas.length > 0 && (
           <>
             <div style={{ background: "#fff", borderRadius: 14, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,0.07)", marginBottom: 14 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "#1a2540", color: "#fff" }}>
-                    <th style={th}>Vista</th>
-                    <th style={th}>Nro. Boleta</th>
-                    <th style={th}>Fecha</th>
-                    <th style={th}>Monto Total</th>
-                    <th style={th}>Empresa</th>
-                    <th style={th}>Acciones</th>
+                    {["Vista","Nro. Boleta","Fecha","Monto Total","Empresa","Acciones"].map(h => <th key={h} style={th}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {boletas.map((b, i) => (
                     <tr key={i} style={{ borderBottom: "1px solid #e8ecf4", background: i % 2 === 0 ? "#f8fafc" : "#fff" }}>
                       <td style={td}>
-                        {b._preview
-                          ? <img src={b._preview} alt="boleta" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #e0e6f0" }} />
-                          : <div style={{ width: 40, height: 40, background: "#e8ecf4", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🧾</div>
-                        }
+                        {b._preview ? <img src={b._preview} alt="boleta" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #e0e6f0" }} />
+                          : <div style={{ width: 40, height: 40, background: "#e8ecf4", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🧾</div>}
                       </td>
                       {editIdx === i ? (
                         <>
-                          {["nro_boleta", "fecha", "monto_total", "nombre_empresa"].map((key) => (
-                            <td key={key} style={td}>
-                              <input
-                                value={editData[key] ?? ""}
-                                onChange={(e) => setEditData((d) => ({ ...d, [key]: e.target.value }))}
-                                style={{ width: "90%", padding: "4px 7px", border: "1px solid #4f6ef7", borderRadius: 6, fontSize: 12 }}
-                              />
-                            </td>
+                          {["nro_boleta","fecha","monto_total","nombre_empresa"].map((key) => (
+                            <td key={key} style={td}><input value={editData[key] ?? ""} onChange={(e) => setEditData((d) => ({ ...d, [key]: e.target.value }))} style={{ width: "90%", padding: "4px 7px", border: "1px solid #4f6ef7", borderRadius: 6, fontSize: 12 }} /></td>
                           ))}
-                          <td style={td}>
-                            <button onClick={saveEdit} style={btnGreen}>Guardar</button>
-                          </td>
+                          <td style={td}><button onClick={saveEdit} style={btnGreen}>Guardar</button></td>
                         </>
                       ) : (
                         <>
                           <td style={td}>{b._status === "error" ? <span style={{ color: "#e05252", fontSize: 12 }}>Error IA</span> : (b.nro_boleta ?? <em style={{ color: "#bbb" }}>—</em>)}</td>
                           <td style={td}>{b.fecha ?? <em style={{ color: "#bbb" }}>—</em>}</td>
-                          <td style={{ ...td, fontWeight: 700, color: "#217346" }}>
-                            {b.monto_total != null ? `$${Number(b.monto_total).toLocaleString("es-CL")}` : <em style={{ color: "#bbb" }}>—</em>}
-                          </td>
+                          <td style={{ ...td, fontWeight: 700, color: "#217346" }}>{b.monto_total != null ? `$${Number(b.monto_total).toLocaleString("es-CL")}` : <em style={{ color: "#bbb" }}>—</em>}</td>
                           <td style={td}>{b.nombre_empresa ?? <em style={{ color: "#bbb" }}>—</em>}</td>
                           <td style={td}>
                             <div style={{ display: "flex", gap: 5 }}>
-                              <button onClick={() => startEdit(i)} style={btnBlue} title="Editar">✏️</button>
-                              <button onClick={() => eliminar(i)} style={btnRed} title="Eliminar">🗑️</button>
+                              <button onClick={() => startEdit(i)} style={btnBlue}>✏️</button>
+                              <button onClick={() => eliminar(i)} style={btnRed}>🗑️</button>
                             </div>
                           </td>
                         </>
@@ -302,27 +198,14 @@ export default function EscanerBoletas() {
                 </tfoot>
               </table>
             </div>
-
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <button onClick={limpiarTodo} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid #e05252", background: "#fff", color: "#e05252", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
-                🗑️ Limpiar todo
-              </button>
-              <button onClick={exportarExcel} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: "#217346", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
-                📊 Exportar Excel
-              </button>
+              <button onClick={limpiarTodo} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid #e05252", background: "#fff", color: "#e05252", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>🗑️ Limpiar todo</button>
+              <button onClick={exportarExcel} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: "#217346", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>📊 Exportar Excel</button>
             </div>
-
-            <p style={{ textAlign: "center", color: "#a0aec0", fontSize: 12, marginTop: 12 }}>
-              💾 Los datos se guardan automáticamente en este navegador
-            </p>
+            <p style={{ textAlign: "center", color: "#a0aec0", fontSize: 12, marginTop: 12 }}>💾 Los datos se guardan automáticamente en este navegador</p>
           </>
         )}
-
-        {boletas.length === 0 && !procesando && (
-          <div style={{ textAlign: "center", color: "#a0aec0", padding: "28px 0", fontSize: 13 }}>
-            Aún no hay boletas guardadas
-          </div>
-        )}
+        {boletas.length === 0 && !procesando && <div style={{ textAlign: "center", color: "#a0aec0", padding: "28px 0", fontSize: 13 }}>Aún no hay boletas guardadas</div>}
       </div>
     </div>
   );
@@ -333,3 +216,5 @@ const td = { padding: "9px 13px", color: "#2d3a55", verticalAlign: "middle" };
 const btnBlue = { padding: "5px 9px", borderRadius: 6, border: "none", background: "#e8f0fe", color: "#4f6ef7", cursor: "pointer", fontWeight: 600, fontSize: 12 };
 const btnRed = { padding: "5px 9px", borderRadius: 6, border: "none", background: "#fde8e8", color: "#e05252", cursor: "pointer", fontWeight: 600, fontSize: 12 };
 const btnGreen = { padding: "5px 11px", borderRadius: 6, border: "none", background: "#217346", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 12 };
+ENDOFFILE
+echo "Listo"
