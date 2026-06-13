@@ -1,4 +1,3 @@
-cat > /mnt/user-data/outputs/escaner-boletas.jsx << 'ENDOFFILE'
 import { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 
@@ -216,5 +215,3 @@ const td = { padding: "9px 13px", color: "#2d3a55", verticalAlign: "middle" };
 const btnBlue = { padding: "5px 9px", borderRadius: 6, border: "none", background: "#e8f0fe", color: "#4f6ef7", cursor: "pointer", fontWeight: 600, fontSize: 12 };
 const btnRed = { padding: "5px 9px", borderRadius: 6, border: "none", background: "#fde8e8", color: "#e05252", cursor: "pointer", fontWeight: 600, fontSize: 12 };
 const btnGreen = { padding: "5px 11px", borderRadius: 6, border: "none", background: "#217346", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 12 };
-ENDOFFILE
-echo "Listo"
