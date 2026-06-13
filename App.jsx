@@ -18,10 +18,10 @@ async function extractBoletaData(file) {
   const base64 = await fileToBase64(file);
   const mediaType = file.type || "image/jpeg";
 
-  const response = await fetch(ANTHROPIC_API_URL, {
+  const response = await fetch("/api/scan", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-    body: JSON.stringify({
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: base64, mediaType,
       model: "claude-sonnet-4-6",
       max_tokens: 1000,
       messages: [
