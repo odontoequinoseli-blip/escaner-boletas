@@ -158,7 +158,10 @@ export default function EscanerBoletas() {
                   </tr>
                 </thead>
                 <tbody>
-                  {boletas.map((b, i) => (
+                  {[...boletas].sort((a, b) => {
+  const parseDate = (d) => { if (!d) return 0; const p = d.split("/"); return new Date(p[2], p[1]-1, p[0]); };
+  return parseDate(a.fecha) - parseDate(b.fecha);
+}).map((b, i) => (
                     <tr key={i} style={{ borderBottom: "1px solid #e8ecf4", background: i % 2 === 0 ? "#f8fafc" : "#fff" }}>
                       <td style={td}>
                         {b._preview ? <img src={b._preview} alt="boleta" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #e0e6f0" }} />
