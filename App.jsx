@@ -73,8 +73,13 @@ function fileToBase64(file) {
                                                                                                                                       for (const file of imgs) {
                                                                                                                                             const previewUrl = URL.createObjectURL(file);
                                                                                                                                                   try {
-                                                                                                                                                          const datos = await extractBoletaData(file);
-                                                                                                                                                                  nuevas.push({ ...datos, _preview: previewUrl, _nombre: file.name, _status: "ok", _fecha_registro: new Date().toLocaleDateString("es-CL") });
+  const datos = await extractBoletaData(file);
+  const duplicada = [...boletas, ...nuevas].find(b => b.nro_boleta && datos.nro_boleta && b.nro_boleta === datos.nro_boleta);
+  if (duplicada) {
+    showToast(`⚠️ Boleta ${datos.nro_boleta} ya existe`, "#e05252");
+    continue;
+  }
+  nuevas.push({  ...datos, _preview: previewUrl, _nombre: file.name, _status: "ok", _fecha_registro: new Date().toLocaleDateString("es-CL") });
                                                                                                                                                                         } catch {
                                                                                                                                                                                 nuevas.push({ nro_boleta: null, fecha: null, monto_total: null, nombre_empresa: null, _preview: previewUrl, _nombre: file.name, _status: "error", _fecha_registro: new Date().toLocaleDateString("es-CL") });
                                                                                                                                                                                       }
