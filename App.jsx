@@ -1,3 +1,4 @@
+cat > /mnt/user-data/outputs/escaner-boletas.jsx << 'ENDOFFILE'
 import { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 
@@ -15,13 +16,11 @@ function fileToBase64(file) {
 async function extractBoletaData(file) {
   const base64 = await fileToBase64(file);
   const mediaType = file.type || "image/jpeg";
-
   const response = await fetch("/api/scan", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image: base64, mediaType }),
   });
-
   if (!response.ok) throw new Error("Error al consultar la API");
   const data = await response.json();
   const text = data.content?.find((b) => b.type === "text")?.text || "";
@@ -43,6 +42,13 @@ function saveToStorage(boletas) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   } catch {}
 }
+
+const parseDate = (d) => {
+  if (!d) return 0;
+  const p = d.split("/");
+  if (p.length < 3) return 0;
+  return new Date(p[2], p[1] - 1, p[0]);
+};
 
 export default function EscanerBoletas() {
   const [boletas, setBoletas] = useState(() => loadFromStorage());
@@ -81,13 +87,19 @@ export default function EscanerBoletas() {
 
   function onFileChange(e) { procesarArchivos(e.target.files); e.target.value = ""; }
   function onDrop(e) { e.preventDefault(); setDragOver(false); procesarArchivos(e.dataTransfer.files); }
-  function eliminar(idx) { setBoletas((prev) => prev.filter((_, i) => i !== idx)); showToast("🗑️ Boleta eliminada", "#e05252"); }
+  function eliminar(idx) {
+    if (window.confirm("¿Eliminar esta boleta?")) {
+      setBoletas((prev) => prev.filter((_, i) => i !== idx));
+      showToast("🗑️ Boleta eliminada", "#e05252");
+    }
+  }
   function startEdit(idx) { setEditIdx(idx); setEditData({ ...boletas[idx] }); }
   function saveEdit() { setBoletas((prev) => prev.map((b, i) => (i === editIdx ? { ...editData } : b))); setEditIdx(null); showToast("✏️ Datos actualizados"); }
   function limpiarTodo() { if (window.confirm("¿Eliminar todas las boletas guardadas?")) { setBoletas([]); showToast("🗑️ Todo limpiado", "#e05252"); } }
 
   function exportarExcel() {
-    const rows = boletas.map((b, i) => ({ "#": i + 1, "Nro. Boleta": b.nro_boleta ?? "", "Fecha": b.fecha ?? "", "Monto Total ($)": b.monto_total ?? "", "Nombre Empresa": b.nombre_empresa ?? "", "Registrado": b._fecha_registro ?? "" }));
+    const sorted = [...boletas].sort((a, b) => parseDate(a.fecha) - parseDate(b.fecha));
+    const rows = sorted.map((b, i) => ({ "#": i + 1, "Nro. Boleta": b.nro_boleta ?? "", "Fecha": b.fecha ?? "", "Monto Total ($)": b.monto_total ?? "", "Nombre Empresa": b.nombre_empresa ?? "", "Registrado": b._fecha_registro ?? "" }));
     const ws = XLSX.utils.json_to_sheet(rows);
     ws["!cols"] = [{ wch: 4 }, { wch: 14 }, { wch: 13 }, { wch: 16 }, { wch: 28 }, { wch: 13 }];
     const wb = XLSX.utils.book_new();
@@ -97,6 +109,7 @@ export default function EscanerBoletas() {
   }
 
   const total = boletas.reduce((s, b) => s + (Number(b.monto_total) || 0), 0);
+  const boletasOrdenadas = [...boletas].sort((a, b) => parseDate(a.fecha) - parseDate(b.fecha));
   const porMes = boletas.reduce((acc, b) => {
     if (!b.fecha) return acc;
     const p = b.fecha.split("/");
@@ -158,10 +171,7 @@ export default function EscanerBoletas() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...boletas].sort((a, b) => {
-  const parseDate = (d) => { if (!d) return 0; const p = d.split("/"); return new Date(p[2], p[1]-1, p[0]); };
-  return parseDate(a.fecha) - parseDate(b.fecha);
-}).map((b, i) => (
+                  {boletasOrdenadas.map((b, i) => (
                     <tr key={i} style={{ borderBottom: "1px solid #e8ecf4", background: i % 2 === 0 ? "#f8fafc" : "#fff" }}>
                       <td style={td}>
                         {b._preview ? <img src={b._preview} alt="boleta" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #e0e6f0" }} />
@@ -218,3 +228,5 @@ const td = { padding: "9px 13px", color: "#2d3a55", verticalAlign: "middle" };
 const btnBlue = { padding: "5px 9px", borderRadius: 6, border: "none", background: "#e8f0fe", color: "#4f6ef7", cursor: "pointer", fontWeight: 600, fontSize: 12 };
 const btnRed = { padding: "5px 9px", borderRadius: 6, border: "none", background: "#fde8e8", color: "#e05252", cursor: "pointer", fontWeight: 600, fontSize: 12 };
 const btnGreen = { padding: "5px 11px", borderRadius: 6, border: "none", background: "#217346", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 12 };
+ENDOFFILE
+echo "Listo"
